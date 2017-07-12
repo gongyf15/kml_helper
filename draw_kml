@@ -1,0 +1,120 @@
+#!/usr/bin/python
+#coding:utf8
+import re
+import json
+import utils
+import matplotlib.pyplot as plt # plt 用于显示图片
+import matplotlib.image as mpimg # mpimg 用于读取图片
+import numpy as np
+from skimage import draw
+
+
+oid_re=re.compile("\d+")
+
+LAT_BIAS = 193
+LNG_BIAS = 285
+
+LNG_RATIO = 8.5552324e-5
+LAT_RATIO = 7.39693989e-5
+
+LNG_ORIGIN = 103.94697
+LAT_ORIGIN = 30.77827
+
+#经纬度转回像素点
+def LNG_to_PIXEL(LNG):
+    return int( (LNG - LNG_ORIGIN)/LNG_RATIO + LNG_BIAS )
+
+def LAT_to_PIXEL(LAT):
+    return int( (LAT_ORIGIN - LAT)/LAT_RATIO + LAT_BIAS )
+
+#Unicode转str
+def U2N(line):
+    return float(line.encode("gbk"))
+
+#画粗线条
+def line_thick(img, flat, flon, tlat, tlon, thick, color):
+    for num in range(0,thick):
+        rr, cc = draw.line(flat+num, flon, tlat+num, tlon)
+        draw.set_color(img, [rr, cc], color)
+
+if __name__ == "__main__":
+    img_origin = mpimg.imread('成都.jpg')
+    #画前几个，如果全画，设为INT_MAX
+    save_num = 1
+
+    Ofile = open("orderId")
+    Dfile = open("driverId")
+
+    count = 1
+    while 1:
+        img = np.array(img_origin)
+        count += 1
+        oid = Ofile.readline()
+        did = Dfile.readline()
+        result=oid_re.findall(oid)
+        if len(result) == 0:
+            break
+        oid=result[0]
+        result=oid_re.findall(did)
+        did=result[0]
+
+        djsonfile = open("drivers.json.stability")
+        while 1:
+            line = djsonfile.readline()
+            if not line:
+                break
+            line = line.replace(" ", "")
+            data = json.loads(line)
+            if str(data["driverId"]) == str(did):
+                for order in data['order_info']:
+                    line_thick(img,LAT_to_PIXEL(order['flat']),LNG_to_PIXEL(order['flng']),
+                               LAT_to_PIXEL(order['tlat']), LNG_to_PIXEL(order['tlng']),
+                               16, [0, 0, 0])
+                    rr, cc = draw.ellipse(LAT_to_PIXEL(order['flat']),LNG_to_PIXEL(order['flng']), 30, 30)
+                    draw.set_color(img, [rr, cc], [0, 0, 255])
+
+                break
+
+        ojsonfile = open("orders.json.stability")
+        while 1:
+            line = ojsonfile.readline()
+            if not line:
+                break
+            line = line.replace(" ", "")
+            data = json.loads(line)
+            if str(data["orderId"]) == str(oid):
+                coords = [U2N(data['flng']), U2N(data['flat']), U2N(data['tlng']), U2N(data['tlat'])]
+                line_thick(img, LAT_to_PIXEL(U2N(data['flat'])), LNG_to_PIXEL(U2N(data['flng'])),
+                           LAT_to_PIXEL(U2N(data['tlat'])), LNG_to_PIXEL(U2N(data['tlng'])),
+                           16, [0, 255, 0])
+                rr, cc = draw.ellipse(LAT_to_PIXEL(U2N(data['flat'])), LNG_to_PIXEL(U2N(data['flng'])), 30, 30)
+                draw.set_color(img, [rr, cc], [0, 0, 255])
+                plt.imshow(img)
+
+                break
+
+        dlocfile = open("d_loc.json.stability")
+        while 1:
+            line = dlocfile.readline()
+            if not line:
+                break
+            line = line.strip().replace(" ", "")
+            items = line.split("_")
+            tmp_line = items[2]
+            items = tmp_line.split("|")
+            loc_did = items[0]
+            if str(loc_did) == str(did):
+                items = line.split(";")
+                lat = float(items[1].replace("d:", ""))
+                lng = float(items[3].replace("d:", ""))
+                dlat, dlng = utils.baidu2gaode_api(lat, lng)
+                rr, cc = draw.ellipse(LAT_to_PIXEL(dlat), LNG_to_PIXEL(dlng), 30, 30)
+                draw.set_color(img, [rr, cc], [255, 255, 0])
+
+                break
+
+        # plt.imshow(img)
+        plt.imsave("../img/" + "oid:" + oid + ".jpg", img)
+
+        if count > save_num:
+            break

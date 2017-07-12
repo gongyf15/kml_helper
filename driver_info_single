@@ -1,0 +1,91 @@
+#!/usr/bin/python
+#coding:utf8
+import re
+import simplekml
+import json
+import utils
+oid_re=re.compile("\d+")
+class Analyzer:
+    def __init__(self):
+        self.kml = simplekml.Kml()
+        pass
+
+    def load_driver_info(self, data):
+        for order in data['order_info']:
+            self.kml.newlinestring(name="order_on_car", description="order_on_car",
+                                   coords=[(order['flng'], order['flat']), (order['tlng'], order['tlat'])])
+            self.kml.newpoint(name="on_car_order_origin", coords=[(order['flng'], order['flat'])])
+
+    def load_order_info(self, data):
+        lin = self.kml.newlinestring(name="new_order", description="new_order",
+                                     coords=[(data['flng'], data['flat']), (data['tlng'], data['tlat'])])
+        lin.style.linestyle.color = simplekml.Color.darkgreen
+        self.kml.newpoint(name="order_origin", coords=[(data['flng'], data['flat'])])
+
+    def load_driver_loc_info(self, line):
+        items = line.split(";")
+        lat = float(items[1].replace("d:",""))
+        lng = float(items[3].replace("d:",""))
+        dlat, dlng = utils.baidu2gaode_api(lat, lng)
+        pnt = self.kml.newpoint(name="driver_loc", coords=[(dlng, dlat)])
+        pnt.style.labelstyle.color = simplekml.Color.yellow
+
+    def write_kml(self, outfn):
+        self.kml.save(outfn)
+
+
+if __name__ == "__main__":
+    case_name = "MultiGeometry"
+
+    Ofile = open("orderId")
+    Dfile = open("driverId")
+
+    while 1:
+        oid = Ofile.readline()
+        did = Dfile.readline()
+        result=oid_re.findall(oid)
+        if len(result) == 0:
+            break
+        oid=result[0]
+        result=oid_re.findall(did)
+        did=result[0]
+
+        worker = Analyzer()
+
+        djsonfile = open("drivers.json.stability")
+        while 1:
+            line = djsonfile.readline()
+            if not line:
+                break
+            line = line.replace(" ", "")
+            data = json.loads(line)
+            if str(data["driverId"]) == str(did):
+                worker.load_driver_info(data)
+                break
+
+        ojsonfile = open("orders.json.stability")
+        while 1:
+            line = ojsonfile.readline()
+            if not line:
+                break
+            line = line.replace(" ", "")
+            data = json.loads(line)
+            if str(data["orderId"]) == str(oid):
+                worker.load_order_info(data)
+                break
+
+        dlocfile = open("d_loc.json.stability")
+        while 1:
+            line = dlocfile.readline()
+            if not line:
+                break
+            line = line.strip().replace(" ", "")
+            items = line.split("_")
+            tmp_line = items[2]
+            items = tmp_line.split("|")
+            loc_did = items[0]
+            if str(loc_did) == str(did):
+                worker.load_driver_loc_info(line)
+                break
+
+        worker.write_kml("../single/" + "oid:" + oid + ".kml")
